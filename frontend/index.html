@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Iniciar sesión · Colegio María Montessori</title>
+  <link rel="icon" type="image/png" href="assets/logo.png" />
+  <meta name="description" content="Automatiza el control de asistencia escolar con QR personalizados, escaneo móvil para profesores y reportes organizados por salón, horario y fecha." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/tokens.css" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/components.css" />
+</head>
+<body>
+  <main class="login">
+    <section class="login-hero">
+      <div class="sidebar-head"><img class="logo-img" src="assets/logo.png" alt="Escudo del Colegio María Montessori" /><div>Colegio María Montessori<small>El Copey · Cesar</small></div></div>
+      <div>
+        <h1>Control de asistencia seguro y en tiempo real para comunidades educativas.</h1>
+      </div>
+      <ul>
+        <li>✓ Los códigos QR no exponen datos personales</li>
+        <li>✓ Actualizaciones en tiempo real</li>
+        <li>✓ Excel sincronizado por salón</li>
+      </ul>
+    </section>
+
+    <section class="login-panel">
+      <form class="login-card" id="login-form" novalidate>
+        <div>
+          <img class="login-crest" src="assets/logo.png" alt="Escudo del Colegio María Montessori" />
+          <p class="eyebrow">Bienvenido de nuevo</p>
+          <h1>Inicia sesión</h1>
+          <p class="muted">Ingresa tus datos para acceder al sistema.</p>
+        </div>
+
+        <div class="field">
+          <label for="email">Correo electrónico</label>
+          <input class="input" id="email" name="email" type="email" autocomplete="username" required />
+        </div>
+        <div class="field">
+          <label for="password">Contraseña</label>
+          <input class="input" id="password" name="password" type="password" autocomplete="current-password" required />
+        </div>
+        <a href="#" class="muted" style="font-size:13px">¿Olvidaste tu contraseña?</a>
+
+        <p id="login-error" class="hidden" style="color:var(--red)"></p>
+        <button class="btn btn-primary btn-block" type="submit">Ingresar</button>
+      </form>
+    </section>
+  </main>
+
+  <script type="module" src="js/pages/login.js"></script>
+</body>
+</html>
