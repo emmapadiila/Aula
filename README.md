@@ -5,12 +5,11 @@ Sistema de control de asistencia escolar con códigos QR, basado en el diseño d
 
 - **Frontend:** HTML + CSS + JavaScript (sin frameworks, módulos ES nativos)
 - **Backend:** Node.js + Express (JavaScript), API REST con JWT
-- **Base de datos:** SQLite integrado en Node (`node:sqlite`), sin instalar nada aparte
+- **Base de datos:** SQLite (archivo local en desarrollo) o Turso, que es SQLite en la nube, en Vercel. Ambos con `@libsql/client`
 
 ## Arrancar
 
 ```bash
-cd backend
 npm install
 npm run seed      # crea todo desde cero: admin + salones 6, 9 y 11 (¡borra historial y QR!)
 npm run sync      # agrega salones/estudiantes nuevos de src/db/estudiantes.js sin borrar nada
@@ -28,7 +27,7 @@ Cuenta de acceso (contraseña inicial `cambiar123`). Jornada: lunes a viernes, 1
 ```
 yore/
 ├── backend/                     API REST + servidor de archivos estáticos
-│   ├── .env                     configuración (puerto, secreto JWT, margen puntual)
+│   ├── .env                     configuración local (puerto, secreto JWT, margen puntual)
 │   ├── data/asistencia.db       base SQLite (se crea sola)
 │   └── src/
 │       ├── server.js            arranca el servidor
@@ -144,3 +143,13 @@ No toca las cuentas ni las contraseñas. Antes de reemplazar guarda una copia de
 
 **Pasar todo a otro computador:** instala el proyecto allí (`npm install` y `npm run seed`), entra como administrador
 y restaura el último `respaldo.json`.
+
+## Publicar en Vercel
+
+- **`api/index.js`** expone la app de Express como función de Vercel. El frontend se sirve como archivos estáticos desde `frontend/` (ver `vercel.json`).
+- **Variables de entorno en Vercel:**
+  - `JWT_SECRET`, la clave de las sesiones (ya configurada).
+  - `TURSO_DATABASE_URL` y `TURSO_AUTH_TOKEN`, que se crean solas al conectar Turso desde Vercel: Storage → Turso.
+- **Hora:** el servidor usa siempre la hora de Colombia (`APP_TIMEZONE`, por defecto `America/Bogota`), aunque Vercel corra en UTC.
+- **Pasar los datos locales a Turso:** `TURSO_DATABASE_URL=… TURSO_AUTH_TOKEN=… npm run db:push`. Reemplaza lo que haya en Turso.
+- **Publicar:** `vercel deploy --prod`.

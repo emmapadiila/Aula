@@ -8,15 +8,18 @@ import { StudentController as Stu } from '../controllers/student.controller.js';
 import { TeacherController as Tea } from '../controllers/teacher.controller.js';
 import { authenticate, authorize } from '../middlewares/auth.js';
 import express from 'express';
-import { buildBackup } from '../services/backup.service.js';
+import { DB_KIND } from '../db/database.js';
+import { buildBackup, getSnapshot, listSnapshots } from '../services/backup.service.js';
 import { restoreBackup, validateBackup } from '../services/restore.service.js';
-import { asyncHandler as h } from '../utils/errors.js';
+import { asyncHandler as h, notFound } from '../utils/errors.js';
+import { nowHHMM, todayISO, TZ } from '../utils/time.js';
 
 const r = Router();
 const admin = authorize('admin');
+const backupName = (suffix = '') => `respaldo-asistencia-${todayISO()}${suffix}.json`;
 
 // ── Público ─────────────────────────────────────────
-r.get('/health', (_req, res) => res.json({ ok: true }));
+r.get('/health', (_req, res) => res.json({ ok: true, storage: DB_KIND, timezone: TZ, today: todayISO(), now: nowHHMM() }));
 r.post('/auth/login', h(Auth.login));
 
 // ── Autenticado (admin y profesor) ──────────────────
@@ -59,9 +62,16 @@ r.get('/reports/distribution', h(Rep.distribution));
 r.get('/reports/excel', h(Rep.excel));
 
 // Respaldo completo en JSON (descarga)
-r.get('/backup', admin, (_req, res) => res.attachment(`respaldo-asistencia-${new Date().toISOString().slice(0, 10)}.json`).json(buildBackup()));
+r.get('/backup', admin, h(async (_req, res) => res.attachment(backupName()).json(await buildBackup())));
 // Restaurar: primero se valida (?check=1 solo revisa y devuelve el resumen), luego se reemplaza todo
-r.post('/backup/restore', admin, express.json({ limit: '50mb' }), h((req, res) =>
-  res.json(req.query.check ? validateBackup(req.body) : restoreBackup(req.body))));
+r.post('/backup/restore', admin, express.json({ limit: '4mb' }), h(async (req, res) =>
+  res.json(req.query.check ? validateBackup(req.body) : await restoreBackup(req.body))));
+// Copias automáticas hechas antes de cada restauración
+r.get('/backup/snapshots', admin, h(async (_req, res) => res.json(await listSnapshots())));
+r.get('/backup/snapshots/:id', admin, h(async (req, res) => {
+  const data = await getSnapshot(Number(req.params.id));
+  if (!data) throw notFound('Copia no encontrada');
+  res.attachment(backupName(`-copia-${req.params.id}`)).json(data);
+}));
 
 export default r;

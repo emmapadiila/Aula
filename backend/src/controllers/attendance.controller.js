@@ -6,9 +6,9 @@ const STATUSES = ['Temprano', 'Puntual', 'Tarde', 'Inasistencia'];
 
 export const AttendanceController = {
   /** Historial con filtros: date, from, to, classroomId, status, studentId, scheduleId, search */
-  list(req, res) {
+  async list(req, res) {
     const q = req.query;
-    res.json(AttendanceModel.list({
+    res.json(await AttendanceModel.list({
       ...q,
       classroomId: Number(q.classroomId) || undefined,
       studentId: Number(q.studentId) || undefined,
@@ -18,21 +18,21 @@ export const AttendanceController = {
   },
 
   /** POST /attendance/scan { qr, scheduleId } */
-  scan(req, res) {
+  async scan(req, res) {
     requireFields(req.body, ['qr', 'scheduleId']);
-    const result = registerScan({ qrPayload: req.body.qr, scheduleId: Number(req.body.scheduleId), user: req.user });
+    const result = await registerScan({ qrPayload: req.body.qr, scheduleId: Number(req.body.scheduleId), user: req.user });
     res.status(201).json(result);
   },
 
   /** POST /attendance/close/:scheduleId → genera inasistencias automáticas */
-  close(req, res) {
-    res.json(closeClass({ scheduleId: Number(req.params.scheduleId), user: req.user, date: req.body?.date }));
+  async close(req, res) {
+    res.json(await closeClass({ scheduleId: Number(req.params.scheduleId), user: req.user, date: req.body?.date }));
   },
 
   /** PATCH /attendance/:id { status } → corrección manual (admin) */
-  updateStatus(req, res) {
+  async updateStatus(req, res) {
     if (!STATUSES.includes(req.body.status)) throw badRequest(`Estado inválido. Usa: ${STATUSES.join(', ')}`);
-    if (!AttendanceModel.updateStatus(Number(req.params.id), req.body.status)) throw notFound();
+    if (!(await AttendanceModel.updateStatus(Number(req.params.id), req.body.status))) throw notFound();
     res.json({ ok: true });
   },
 };

@@ -10,9 +10,8 @@ export default {
       <div class="grid grid-2">
         <section class="card">
           <h2 style="margin-bottom:8px">Respaldo de datos</h2>
-          <p class="muted" style="margin-bottom:16px">Todo se guarda automáticamente. Cada cambio (estudiantes, salones, horarios, asistencias)
-            actualiza también un archivo JSON completo en <code>backend/data/respaldo.json</code>, más una copia por día en
-            <code>backend/data/respaldos/</code>.</p>
+          <p class="muted" style="margin-bottom:16px">Todo se guarda automáticamente en la base de datos. Descarga un respaldo
+            JSON completo (estudiantes, QR, salones, horarios y asistencias) de vez en cuando y guárdalo en tu PC o en la nube.</p>
           <div class="filters">
             <button class="btn btn-primary" id="backup">${icon('download')} Descargar respaldo JSON</button>
             <a class="btn btn-outline" href="#/excel">${icon('file-spreadsheet')} Exportar a Excel</a>
@@ -79,7 +78,9 @@ export default {
             info.innerHTML = `<p style="color:var(--green)"><strong>Restauración completa:</strong> ${done.estudiantes} estudiantes,
               ${done.salones} salones, ${done.asistencias - done.asistencias_omitidas} asistencias.</p>
               ${done.asistencias_omitidas ? `<p class="muted">${done.asistencias_omitidas} asistencias no se pudieron ubicar y se omitieron.</p>` : ''}
-              <p class="muted" style="font-size:12px">Copia de lo que había antes: ${esc(done.copia_previa)}</p>`;
+              <button class="btn btn-outline btn-sm" id="dl-prev">${icon('download')} Descargar copia de lo que había antes</button>`;
+            info.querySelector('#dl-prev').addEventListener('click', () =>
+              api.download(`/backup/snapshots/${done.copia_previa}`, {}, `copia-antes-de-restaurar-${done.copia_previa}.json`));
             toast('Respaldo restaurado');
           } catch (err) {
             e.target.disabled = false;

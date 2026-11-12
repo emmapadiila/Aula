@@ -18,37 +18,37 @@ function validate(body, current = {}) {
 }
 
 export const ScheduleController = {
-  list(req, res) {
+  async list(req, res) {
     const teacherId = req.user.role === 'teacher' ? req.user.id : Number(req.query.teacherId) || undefined;
-    res.json(ScheduleModel.list({
+    res.json(await ScheduleModel.list({
       teacherId,
       classroomId: Number(req.query.classroomId) || undefined,
       weekday: Number(req.query.weekday) || undefined,
     }));
   },
 
-  /** Clases de hoy del usuario (profesor) o de todos (admin) */
-  today(req, res) {
+  /** Jornadas de hoy (hora de Colombia) del profesor, o de todos (admin) */
+  async today(req, res) {
     const teacherId = req.user.role === 'teacher' ? req.user.id : undefined;
-    res.json(ScheduleModel.list({ teacherId, weekday: weekdayOf() }));
+    res.json(await ScheduleModel.list({ teacherId, weekday: weekdayOf() }));
   },
 
-  create(req, res) {
+  async create(req, res) {
     requireFields(req.body, ['classroom_id', 'teacher_id', 'subject', 'weekday', 'start_time', 'end_time']);
     validate(req.body);
-    res.status(201).json(ScheduleModel.create(req.body));
+    res.status(201).json(await ScheduleModel.create(req.body));
   },
 
-  update(req, res) {
+  async update(req, res) {
     const id = Number(req.params.id);
-    const current = ScheduleModel.findById(id);
+    const current = await ScheduleModel.findById(id);
     if (!current) throw notFound('Horario no encontrado');
     validate(req.body, current);
-    res.json(ScheduleModel.update(id, req.body));
+    res.json(await ScheduleModel.update(id, req.body));
   },
 
-  remove(req, res) {
-    if (!ScheduleModel.remove(Number(req.params.id))) throw notFound('Horario no encontrado');
+  async remove(req, res) {
+    if (!(await ScheduleModel.remove(Number(req.params.id)))) throw notFound('Horario no encontrado');
     res.status(204).end();
   },
 };

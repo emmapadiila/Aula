@@ -4,3 +4,7 @@ backend/data/
 server.log
 server.err.log
 *.tmp
+
+.vercel
+.env*
+!backend/.env.example

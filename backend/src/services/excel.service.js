@@ -25,8 +25,8 @@ export async function buildWorkbook(filters = {}) {
   wb.creator = 'Sistema de Asistencia QR';
   wb.created = new Date();
 
-  const records = AttendanceModel.all(filters);
-  for (const room of ClassroomModel.list()) {
+  const [records, rooms] = await Promise.all([AttendanceModel.all(filters), ClassroomModel.list()]);
+  for (const room of rooms) {
     const ws = wb.addWorksheet(`Salón ${room.name}`);
     ws.columns = COLUMNS;
     const header = ws.getRow(1);

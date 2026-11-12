@@ -11,6 +11,11 @@ try {
   /* sin .env: se usan los valores por defecto */
 }
 
+// En Vercel la clave de sesión es obligatoria: sin ella cualquiera podría falsificar sesiones
+if (process.env.VERCEL && !process.env.JWT_SECRET) {
+  throw new Error('Falta la variable de entorno JWT_SECRET en Vercel');
+}
+
 export const env = {
   port: Number(process.env.PORT) || 3100,
   jwtSecret: process.env.JWT_SECRET || 'dev-secret-no-usar-en-produccion',

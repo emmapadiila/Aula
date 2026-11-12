@@ -3,11 +3,11 @@ import { hashPassword } from '../services/auth.service.js';
 import { notFound, requireFields } from '../utils/errors.js';
 
 export const TeacherController = {
-  list: (_req, res) => res.json(UserModel.listTeachers()),
+  list: async (_req, res) => res.json(await UserModel.listTeachers()),
 
-  create(req, res) {
+  async create(req, res) {
     requireFields(req.body, ['name', 'email', 'password']);
-    const user = UserModel.create({
+    const user = await UserModel.create({
       name: req.body.name,
       email: req.body.email.trim().toLowerCase(),
       passwordHash: hashPassword(req.body.password),
@@ -17,15 +17,18 @@ export const TeacherController = {
     res.status(201).json(user);
   },
 
-  update(req, res) {
+  async update(req, res) {
     const id = Number(req.params.id);
-    const u = UserModel.findById(id);
+    const u = await UserModel.findById(id);
     if (!u || u.role !== 'teacher') throw notFound('Profesor no encontrado');
-    res.json(UserModel.update(id, req.body));
+    res.json(await UserModel.update(id, req.body));
   },
 
-  remove(req, res) {
-    if (!UserModel.remove(Number(req.params.id))) throw notFound('Profesor no encontrado');
+  async remove(req, res) {
+    const id = Number(req.params.id);
+    const u = await UserModel.findById(id);
+    if (!u || u.role !== 'teacher') throw notFound('Profesor no encontrado');
+    await UserModel.remove(id);
     res.status(204).end();
   },
 };

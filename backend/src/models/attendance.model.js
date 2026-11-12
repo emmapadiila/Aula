@@ -10,6 +10,9 @@ const SELECT = `
   JOIN classrooms c ON c.id = sc.classroom_id
   JOIN users u      ON u.id = sc.teacher_id`;
 
+const COUNT_FROM = `FROM attendance a
+  JOIN students s ON s.id = a.student_id JOIN schedules sc ON sc.id = a.schedule_id`;
+
 function buildWhere({ from, to, date, classroomId, status, studentId, scheduleId, teacherId, search }) {
   const where = [];
   const p = [];
@@ -26,42 +29,39 @@ function buildWhere({ from, to, date, classroomId, status, studentId, scheduleId
 }
 
 export const AttendanceModel = {
-  list: (filters = {}) => {
+  async list(filters = {}) {
     const { w, p } = buildWhere(filters);
     const limit = Number(filters.limit) || 50;
     const offset = Number(filters.offset) || 0;
-    const total = db.prepare(`SELECT COUNT(*) AS n FROM attendance a
-      JOIN students s ON s.id = a.student_id JOIN schedules sc ON sc.id = a.schedule_id ${w}`).get(...p).n;
-    const rows = db.prepare(`${SELECT} ${w} ORDER BY a.date DESC, a.arrival_time DESC LIMIT ? OFFSET ?`)
-      .all(...p, limit, offset);
+    const [{ n: total }, rows] = await Promise.all([
+      db.get(`SELECT COUNT(*) AS n ${COUNT_FROM} ${w}`, p),
+      db.all(`${SELECT} ${w} ORDER BY a.date DESC, a.arrival_time DESC LIMIT ? OFFSET ?`, [...p, limit, offset]),
+    ]);
     return { total, rows };
   },
 
   /** Todos los registros (sin paginar) para exportar */
-  all: (filters = {}) => {
+  all(filters = {}) {
     const { w, p } = buildWhere(filters);
-    return db.prepare(`${SELECT} ${w} ORDER BY CAST(c.name AS INTEGER), c.name, a.date, s.code`).all(...p);
+    return db.all(`${SELECT} ${w} ORDER BY CAST(c.name AS INTEGER), c.name, a.date, s.code`, p);
   },
 
   find: (studentId, scheduleId, date) =>
-    db.prepare('SELECT * FROM attendance WHERE student_id = ? AND schedule_id = ? AND date = ?')
-      .get(studentId, scheduleId, date),
+    db.get('SELECT * FROM attendance WHERE student_id = ? AND schedule_id = ? AND date = ?', [studentId, scheduleId, date]),
 
-  create: (d) => {
-    const r = db.prepare(`
+  async create(d) {
+    const r = await db.run(`
       INSERT INTO attendance (student_id, schedule_id, date, scheduled_time, arrival_time, status, recorded_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .run(d.student_id, d.schedule_id, d.date, d.scheduled_time, d.arrival_time ?? null, d.status, d.recorded_by ?? null);
-    return db.prepare(`${SELECT} WHERE a.id = ?`).get(r.lastInsertRowid);
+      VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [d.student_id, d.schedule_id, d.date, d.scheduled_time, d.arrival_time ?? null, d.status, d.recorded_by ?? null]);
+    return db.get(`${SELECT} WHERE a.id = ?`, [r.lastInsertRowid]);
   },
 
-  updateStatus: (id, status) => db.prepare('UPDATE attendance SET status = ? WHERE id = ?').run(status, id).changes,
+  updateStatus: async (id, status) => (await db.run('UPDATE attendance SET status = ? WHERE id = ?', [status, id])).changes,
 
   /** Conteo por estado con filtros */
-  countByStatus: (filters = {}) => {
+  countByStatus(filters = {}) {
     const { w, p } = buildWhere(filters);
-    return db.prepare(`SELECT a.status, COUNT(*) AS n FROM attendance a
-      JOIN students s ON s.id = a.student_id JOIN schedules sc ON sc.id = a.schedule_id
-      ${w} GROUP BY a.status`).all(...p);
+    return db.all(`SELECT a.status, COUNT(*) AS n ${COUNT_FROM} ${w} GROUP BY a.status`, p);
   },
 };

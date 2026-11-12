@@ -2,15 +2,15 @@
  * Restaurar desde un respaldo JSON (el mismo formato que genera backup.service.js).
  *
  * - Reemplaza salones, horarios, estudiantes (con su QR) y asistencias.
- * - NO toca las cuentas de usuario ni las contraseñas: los horarios se asignan al usuario
+ * - NO toca las cuentas de usuario ni las contraseñas: las jornadas se asignan al usuario
  *   con el mismo correo, o al administrador si no existe.
- * - Antes de borrar nada guarda una copia del estado actual en data/respaldos/antes-de-restaurar-*.json
- * - Todo ocurre en una transacción: si algo falla, no se cambia nada.
+ * - Antes de borrar nada guarda una copia del estado actual (snapshot).
+ * - Todo se ejecuta en un solo lote atómico: si algo falla, no se cambia nada.
  */
-import { db, transaction } from '../db/database.js';
+import { db } from '../db/database.js';
 import { badRequest } from '../utils/errors.js';
 import { weekdayOf } from '../utils/time.js';
-import { snapshot, writeBackup } from './backup.service.js';
+import { snapshot } from './backup.service.js';
 
 const STATUSES = new Set(['Temprano', 'Puntual', 'Tarde', 'Inasistencia']);
 const TOKEN = /^[a-f0-9]{32}$/;
@@ -60,67 +60,88 @@ export function validateBackup(data) {
   };
 }
 
-export function restoreBackup(data) {
+/** Asigna ids: usa el del respaldo si es válido y no se repite; si no, el siguiente libre */
+function idAllocator(items) {
+  const used = new Set();
+  let next = Math.max(0, ...items.map((x) => (Number.isInteger(x.id) ? x.id : 0))) + 1;
+  return (item) => {
+    if (Number.isInteger(item.id) && item.id > 0 && !used.has(item.id)) { used.add(item.id); return item.id; }
+    while (used.has(next)) next++;
+    used.add(next);
+    return next++;
+  };
+}
+
+export async function restoreBackup(data) {
   const summary = validateBackup(data);
-  const safety = snapshot('antes-de-restaurar');
+  const snapshotId = await snapshot('antes-de-restaurar');
 
-  const admin = db.prepare("SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1").get();
-  const userByEmail = db.prepare('SELECT id FROM users WHERE email = ?');
-  const userFor = (email) => (email && userByEmail.get(String(email).toLowerCase())?.id) || admin.id;
+  const users = await db.all('SELECT id, email, role FROM users ORDER BY id');
+  const admin = users.find((u) => u.role === 'admin');
+  const userFor = (email) => users.find((u) => email && u.email === String(email).toLowerCase())?.id ?? admin.id;
 
+  const stmts = ['attendance', 'schedules', 'students', 'classrooms'].map((t) => ({ sql: `DELETE FROM ${t}`, args: [] }));
+
+  // Salones
+  const roomByOldId = new Map();
+  const roomByName = new Map();
+  const roomId = idAllocator(data.salones);
+  for (const s of data.salones) {
+    const id = roomId(s);
+    if (s.id != null) roomByOldId.set(s.id, id);
+    roomByName.set(String(s.nombre), id);
+    stmts.push({ sql: 'INSERT INTO classrooms (id, name, grade, teacher_id) VALUES (?, ?, ?, ?)',
+      args: [id, String(s.nombre), s.grado ?? `${s.nombre}°`, userFor(s.encargado_correo)] });
+  }
+  const roomOf = (oldId, name) => roomByOldId.get(oldId) ?? roomByName.get(String(name)) ?? null;
+
+  // Horarios
+  const schByOldId = new Map();
+  const schByRoomDay = new Map();
+  const schId = idAllocator(data.horarios);
+  for (const h of data.horarios) {
+    const id = schId(h);
+    const room = roomOf(h.salon_id, h.salon);
+    if (h.id != null) schByOldId.set(h.id, id);
+    if (!schByRoomDay.has(`${room}-${h.dia_semana}`)) schByRoomDay.set(`${room}-${h.dia_semana}`, id);
+    stmts.push({
+      sql: `INSERT INTO schedules (id, classroom_id, teacher_id, subject, weekday, start_time, end_time, on_time_margin)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [id, room, userFor(h.encargado_correo), h.materia ?? 'Jornada', Number(h.dia_semana), h.entrada, h.salida, h.margen_puntual_min ?? null],
+    });
+  }
+
+  // Estudiantes (conservan código y QR → las manillas impresas siguen funcionando)
+  const stuByOldId = new Map();
+  const stuByCode = new Map();
+  const stuId = idAllocator(data.estudiantes);
+  for (const e of data.estudiantes) {
+    const id = stuId(e);
+    if (e.id != null) stuByOldId.set(e.id, id);
+    stuByCode.set(e.codigo, id);
+    stmts.push({
+      sql: `INSERT INTO students (id, code, name, document, email, classroom_id, entry_time, qr_token, active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [id, e.codigo, String(e.nombre).trim(), e.identificacion || null, e.correo || null,
+        roomOf(e.salon_id, e.salon), e.hora_entrada_individual || null, e.qr_token, e.activo === 0 ? 0 : 1],
+    });
+  }
+
+  // Asistencias
   let skipped = 0;
-  transaction(() => {
-    for (const t of ['attendance', 'schedules', 'students', 'classrooms']) db.exec(`DELETE FROM ${t}`);
+  for (const a of data.asistencias ?? []) {
+    const student = stuByOldId.get(a.estudiante_id) ?? stuByCode.get(a.codigo);
+    const room = roomByName.get(String(a.salon));
+    const schedule = schByOldId.get(a.horario_id)
+      ?? schByRoomDay.get(`${room}-${weekdayOf(new Date(`${a.fecha}T12:00:00`))}`);
+    if (!student || !schedule) { skipped++; continue; }
+    stmts.push({
+      sql: `INSERT OR IGNORE INTO attendance (student_id, schedule_id, date, scheduled_time, arrival_time, status)
+            VALUES (?, ?, ?, ?, ?, ?)`,
+      args: [student, schedule, a.fecha, a.hora_programada, a.hora_llegada ?? null, a.estado],
+    });
+  }
 
-    // Salones
-    const roomByOldId = new Map();
-    const roomByName = new Map();
-    const insRoom = db.prepare('INSERT INTO classrooms (name, grade, teacher_id) VALUES (?, ?, ?)');
-    for (const s of data.salones) {
-      const id = Number(insRoom.run(String(s.nombre), s.grado ?? `${s.nombre}°`, userFor(s.encargado_correo)).lastInsertRowid);
-      if (s.id != null) roomByOldId.set(s.id, id);
-      roomByName.set(String(s.nombre), id);
-    }
-    const roomOf = (oldId, name) => roomByOldId.get(oldId) ?? roomByName.get(String(name)) ?? null;
-
-    // Horarios
-    const schByOldId = new Map();
-    const schByRoomDay = new Map();
-    const insSch = db.prepare(`INSERT INTO schedules (classroom_id, teacher_id, subject, weekday, start_time, end_time, on_time_margin)
-                               VALUES (?, ?, ?, ?, ?, ?, ?)`);
-    for (const h of data.horarios) {
-      const room = roomOf(h.salon_id, h.salon);
-      const id = Number(insSch.run(room, userFor(h.encargado_correo), h.materia ?? 'Jornada', Number(h.dia_semana),
-        h.entrada, h.salida, h.margen_puntual_min ?? null).lastInsertRowid);
-      if (h.id != null) schByOldId.set(h.id, id);
-      if (!schByRoomDay.has(`${room}-${h.dia_semana}`)) schByRoomDay.set(`${room}-${h.dia_semana}`, id);
-    }
-
-    // Estudiantes (conservan código y QR → las manillas impresas siguen funcionando)
-    const stuByOldId = new Map();
-    const stuByCode = new Map();
-    const insStu = db.prepare(`INSERT INTO students (code, name, document, email, classroom_id, entry_time, qr_token, active)
-                               VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
-    for (const e of data.estudiantes) {
-      const id = Number(insStu.run(e.codigo, String(e.nombre).trim(), e.identificacion || null, e.correo || null,
-        roomOf(e.salon_id, e.salon), e.hora_entrada_individual || null, e.qr_token, e.activo === 0 ? 0 : 1).lastInsertRowid);
-      if (e.id != null) stuByOldId.set(e.id, id);
-      stuByCode.set(e.codigo, id);
-    }
-
-    // Asistencias
-    const insAtt = db.prepare(`INSERT OR IGNORE INTO attendance (student_id, schedule_id, date, scheduled_time, arrival_time, status)
-                               VALUES (?, ?, ?, ?, ?, ?)`);
-    for (const a of data.asistencias ?? []) {
-      const student = stuByOldId.get(a.estudiante_id) ?? stuByCode.get(a.codigo);
-      const room = roomByName.get(String(a.salon));
-      const schedule = schByOldId.get(a.horario_id)
-        ?? schByRoomDay.get(`${room}-${weekdayOf(new Date(`${a.fecha}T12:00:00`))}`);
-      if (!student || !schedule) { skipped++; continue; }
-      insAtt.run(student, schedule, a.fecha, a.hora_programada, a.hora_llegada ?? null, a.estado);
-    }
-  });
-
-  writeBackup();
-  return { ...summary, asistencias_omitidas: skipped, copia_previa: safety };
+  await db.batch(stmts);
+  return { ...summary, asistencias_omitidas: skipped, copia_previa: snapshotId };
 }

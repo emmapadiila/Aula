@@ -6,8 +6,8 @@ import { unauthorized } from '../utils/errors.js';
 
 export const hashPassword = (plain) => bcrypt.hashSync(plain, 10);
 
-export function login(email, password) {
-  const user = UserModel.findByEmail(String(email).trim().toLowerCase());
+export async function login(email, password) {
+  const user = await UserModel.findByEmail(String(email).trim().toLowerCase());
   if (!user || !user.active || !bcrypt.compareSync(password, user.password_hash)) {
     throw unauthorized('Correo o contraseña incorrectos');
   }

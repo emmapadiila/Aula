@@ -3,11 +3,11 @@ import { login } from '../services/auth.service.js';
 import { requireFields } from '../utils/errors.js';
 
 export const AuthController = {
-  login(req, res) {
+  async login(req, res) {
     requireFields(req.body, ['email', 'password']);
-    res.json(login(req.body.email, req.body.password));
+    res.json(await login(req.body.email, req.body.password));
   },
-  me(req, res) {
-    res.json(UserModel.findById(req.user.id));
+  async me(req, res) {
+    res.json(await UserModel.findById(req.user.id));
   },
 };
