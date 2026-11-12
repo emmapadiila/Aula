@@ -15,7 +15,23 @@ import path from 'node:path';
 import { env } from '../config/env.js';
 import { SCHEMA } from './schema.js';
 
-const remoteUrl = process.env.TURSO_DATABASE_URL;
+/**
+ * Busca la conexión a Turso. Normalmente TURSO_DATABASE_URL / TURSO_AUTH_TOKEN, pero la
+ * integración de Vercel permite otro prefijo (p. ej. STORAGE_URL, STORAGE_DATABASE_URL...).
+ */
+function findTurso() {
+  const e = process.env;
+  if (e.TURSO_DATABASE_URL) return { url: e.TURSO_DATABASE_URL, token: e.TURSO_AUTH_TOKEN };
+  const key = Object.keys(e).find((k) => /_URL$/.test(k) && /^libsql:\/\//.test(e[k] ?? ''));
+  if (!key) return { url: undefined, token: undefined };
+  const prefix = key.replace(/_(DATABASE_)?URL$/, '');
+  const tokenKey = [`${prefix}_AUTH_TOKEN`, `${prefix}_TOKEN`, `${prefix}_DATABASE_AUTH_TOKEN`].find((k) => e[k])
+    ?? Object.keys(e).find((k) => k.startsWith(prefix) && /TOKEN$/.test(k));
+  return { url: e[key], token: tokenKey ? e[tokenKey] : undefined };
+}
+
+const turso = findTurso();
+const remoteUrl = turso.url;
 export const DB_KIND = remoteUrl ? 'turso' : 'local';
 
 // En Vercel no hay disco permanente: sin Turso los datos se perderían
@@ -31,7 +47,7 @@ if (!url) {
 
 // En la nube se usa el cliente HTTP (sin binarios nativos); en local, el cliente con soporte de archivos.
 const { createClient } = remoteUrl ? await import('@libsql/client/web') : await import('@libsql/client');
-const client = createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN, intMode: 'number' });
+const client = createClient({ url, authToken: turso.token, intMode: 'number' });
 
 const clean = (args = []) => args.map((a) => (a === undefined ? null : typeof a === 'boolean' ? Number(a) : a));
 const toObjects = (rs) => rs.rows.map((row) => Object.fromEntries(rs.columns.map((c, i) => [c, row[i]])));

@@ -8,10 +8,12 @@ import { StudentController as Stu } from '../controllers/student.controller.js';
 import { TeacherController as Tea } from '../controllers/teacher.controller.js';
 import { authenticate, authorize } from '../middlewares/auth.js';
 import express from 'express';
-import { DB_KIND } from '../db/database.js';
+import crypto from 'node:crypto';
+import { db, DB_KIND } from '../db/database.js';
+import { importStatements } from '../db/dump.js';
 import { buildBackup, getSnapshot, listSnapshots } from '../services/backup.service.js';
 import { restoreBackup, validateBackup } from '../services/restore.service.js';
-import { asyncHandler as h, notFound } from '../utils/errors.js';
+import { asyncHandler as h, forbidden, notFound } from '../utils/errors.js';
 import { nowHHMM, todayISO, TZ } from '../utils/time.js';
 
 const r = Router();
@@ -21,6 +23,24 @@ const backupName = (suffix = '') => `respaldo-asistencia-${todayISO()}${suffix}.
 // ── Público ─────────────────────────────────────────
 r.get('/health', (_req, res) => res.json({ ok: true, storage: DB_KIND, timezone: TZ, today: todayISO(), now: nowHHMM() }));
 r.post('/auth/login', h(Auth.login));
+
+/**
+ * Primera carga de datos en una base NUEVA (p. ej. Turso recién creado en Vercel).
+ * Solo funciona si: existe la variable SETUP_TOKEN, el encabezado x-setup-token coincide
+ * y la base todavía no tiene ningún usuario. Después de usarla, borra SETUP_TOKEN en Vercel.
+ */
+r.post('/setup/import', express.json({ limit: '4mb' }), h(async (req, res) => {
+  const expected = process.env.SETUP_TOKEN;
+  const given = String(req.headers['x-setup-token'] ?? '');
+  const ok = expected && given.length === expected.length &&
+    crypto.timingSafeEqual(Buffer.from(given), Buffer.from(expected));
+  if (!ok) throw forbidden('Importación no habilitada');
+  const { n } = await db.get('SELECT COUNT(*) AS n FROM users');
+  if (n > 0) throw forbidden('La base de datos ya tiene datos; la importación inicial está bloqueada');
+  const { stmts, counts } = importStatements(req.body);
+  await db.batch(stmts);
+  res.json({ ok: true, importado: counts });
+}));
 
 // ── Autenticado (admin y profesor) ──────────────────
 r.use(authenticate);

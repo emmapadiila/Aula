@@ -9,7 +9,8 @@
     "dev": "node --watch backend/src/server.js",
     "seed": "node backend/src/db/seed.js",
     "sync": "node backend/src/db/sync.js",
-    "db:push": "node backend/src/db/push.js"
+    "db:push": "node backend/src/db/push.js",
+    "db:export": "node backend/src/db/export.js"
   },
   "engines": {
     "node": ">=20"
